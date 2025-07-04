@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { stripe } from "@/utils/stripe";
 
 export async function POST(req: Request) {
   const { priceId } = await req.json();
