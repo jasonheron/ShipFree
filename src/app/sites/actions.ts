@@ -2,12 +2,12 @@
 
 "use server";
 
-import { createServerActionClient } from "@supabase/auth-helpers-nextjs";
+import { createClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 export async function createSite(formData: FormData) {
-  const supabase = createServerActionClient({ cookies: () => cookies() });
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
