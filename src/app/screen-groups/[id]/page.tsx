@@ -1,9 +1,12 @@
+// src/app/screen-groups/[id]/page.tsx
+
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
-import { ArrowLeft, Monitor, X } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import ScheduleEditor from "@/components/ScheduleEditor";
+import PlayerPreview from "@/components/PlayerPreview";
 
 const ALL_LAYOUTS: Record<number, string[]> = {
   1: ["1"],
@@ -13,34 +16,46 @@ const ALL_LAYOUTS: Record<number, string[]> = {
 };
 
 export default async function ScreenGroupPage({
-  params,
+  params: { id }, // THE FIX IS HERE: Destructure `id` directly from params
 }: {
   params: { id: string };
 }) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) notFound();
 
+  // Fetch the screen group using the destructured `id`
   const { data: group } = await supabase
     .from("screen_groups")
     .select("*")
-    .eq("id", params.id)
+    .eq("id", id) // Use the `id` variable directly
     .eq("user_id", user.id)
     .single();
   if (!group) notFound();
 
+  // Fetch all screens for the user to determine assignments
   const { data: allScreens } = await supabase
     .from("screens_table")
-    .select("*")
+    .select("id, name, screen_group_id")
     .eq("user_id", user.id);
 
-  const assignedScreens = allScreens?.filter(s => s.screen_group_id === group.id) ?? [];
-  const unassignedScreens = allScreens?.filter(s => s.screen_group_id !== group.id) ?? [];
+  const assignedScreens =
+    allScreens?.filter((s) => s.screen_group_id === group.id) ?? [];
 
+  // Fetch all available media for the schedule editor
   const { data: media } = await supabase
     .from("media_table")
-    .select("*")
+    .select("id, file_name, file_url, file_type")
     .eq("user_id", user.id);
+
+  // Fetch the existing schedule for this group to populate the editor and preview
+  const { data: schedule } = await supabase
+    .from("media_schedules")
+    .select("*")
+    .eq("screen_group_id", group.id)
+    .order("slot_index", { ascending: true });
 
   const numScreens = assignedScreens.length;
   const layouts = ALL_LAYOUTS[numScreens] ?? [];
@@ -48,92 +63,48 @@ export default async function ScreenGroupPage({
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <main className="flex-1 p-8">
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center mb-4 text-sm text-gray-600 hover:text-gray-800"
-        >
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Back to Dashboard
-        </Link>
+      <main className="flex-1 p-8 overflow-y-auto">
+        <header className="flex items-center justify-between mb-6">
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center text-sm text-gray-600 hover:text-gray-800"
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to Dashboard
+          </Link>
+        </header>
 
-        <h1 className="text-2xl font-semibold mb-2">{group.name}</h1>
-        <p className="text-gray-500 mb-6">Manage screens and schedule.</p>
+        <div className="mb-8">
+            <h1 className="text-2xl font-semibold mb-1">{group.name}</h1>
+            <p className="text-gray-500">Manage screens and schedule.</p>
+        </div>
 
         <section className="mb-8">
-          <h2 className="text-lg font-semibold mb-2">Screens ({assignedScreens.length}/4)</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-            {assignedScreens.map((screen, index) => (
-              <form
-                key={screen.id}
-                action="/api/screen-groups/toggle-screen"
-                method="post"
-                className="relative border rounded bg-white flex flex-col"
-              >
-                <input type="hidden" name="group_id" value={group.id} />
-                <input type="hidden" name="screen_id" value={screen.id} />
-                <input type="hidden" name="action" value="remove" />
-                <button
-                  type="submit"
-                  className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                  title="Remove"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-                <div className="w-full aspect-video overflow-hidden rounded-t">
-                  <img
-                    src={`/${index + 1}.png`}
-                    alt={screen.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-
-                <div className="text-sm text-center p-2">{screen.name}</div>
-              </form>
-            ))}
-            {unassignedScreens.length > 0 && (
-              <form
-                action="/api/screen-groups/toggle-screen"
-                method="post"
-                className="border rounded p-2 bg-white flex flex-col justify-between"
-              >
-                <input type="hidden" name="group_id" value={group.id} />
-                <select
-                  name="screen_id"
-                  className="border rounded px-2 py-1 mb-2"
-                  required
-                  defaultValue=""
-                >
-                  <option value="" disabled>
-                    Select Screen
-                  </option>
-                  {unassignedScreens.map((screen) => (
-                    <option key={screen.id} value={screen.id}>
-                      {screen.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="submit"
-                  name="action"
-                  value="add"
-                  className="w-full bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700 text-sm"
-                >
-                  + Add
-                </button>
-              </form>
-            )}
-          </div>
+          <h2 className="text-lg font-semibold mb-4">
+            Live Preview
+          </h2>
+          {/* Pass the assignedScreens to the preview component */}
+          <PlayerPreview 
+            schedule={schedule ?? []} 
+            media={media ?? []} 
+            assignedScreens={assignedScreens} 
+          />
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold mb-4">Schedule</h2>
+          <h2 className="text-xl font-semibold mb-4">Schedule Editor</h2>
           {layouts.length > 0 ? (
-            <ScheduleEditor layouts={layouts} media={media ?? []} />
+            <ScheduleEditor
+              groupId={group.id}
+              layouts={layouts}
+              media={media ?? []}
+              initialSchedule={schedule ?? []}
+            />
           ) : (
-            <p className="text-gray-500">
-              No layouts available. Please assign screens to this group.
-            </p>
+            <div className="p-6 bg-white border rounded-lg text-center text-gray-500">
+              <p>No layouts are available for this number of screens.</p>
+              <p className="text-sm">Please assign at least one screen to create a schedule.</p>
+            </div>
           )}
         </section>
       </main>

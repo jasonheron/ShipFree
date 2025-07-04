@@ -1,64 +1,101 @@
 // src/app/screens/page.tsx
-
 import { createClient } from "@/lib/supabase/server";
-import { cookies } from "next/headers";
+import Sidebar from "@/components/Sidebar";
 import Link from "next/link";
-import Sidebar from "@/components/Sidebar"; // ✅ import your Sidebar
+import { ArrowLeft, HardDrive, Monitor, PlusCircle } from "lucide-react";
+import { redirect } from "next/navigation";
+import ScreenSettings from "@/components/ScreenSettings";
 
 export default async function ScreensPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
+  // Fetch all screens and join with related tables to get names
   const { data: screens } = await supabase
     .from("screens_table")
-    .select("*, sites_table(name)")
-    .eq("user_id", user?.id)
+    .select(`
+      id,
+      name,
+      resolution,
+      orientation,
+      last_seen_at,
+      pairing_code,
+      sites_table ( name ),
+      screen_groups ( name )
+    `)
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar />
-
-      <main className="flex-1 p-6 overflow-y-auto">
+      <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold">Your Screens</h1>
+          <div>
+            <h1 className="text-2xl font-semibold">Screen Management</h1>
+            <p className="text-gray-500">View, edit, and manage all your registered screens.</p>
+          </div>
           <Link
             href="/screens/new"
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
           >
-            Add Screen
+            <PlusCircle className="h-4 w-4 mr-2" />
+            Add New Screen
           </Link>
         </div>
 
-        {screens && screens.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {screens.map((screen) => (
-              <div
-                key={screen.id}
-                className="bg-white border rounded p-4 shadow hover:shadow-md transition"
-              >
-                <h2 className="text-lg font-semibold">{screen.name}</h2>
-                <p className="text-sm text-gray-500">
-                  Site: {screen.sites_table?.name || "Unassigned"}
-                </p>
-                <p className="text-sm mt-1">
-                  Status:{" "}
-                  <span
-                    className={
-                      screen.status === "online"
-                        ? "text-green-600"
-                        : "text-gray-500"
-                    }
-                  >
-                    {screen.status}
-                  </span>
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-gray-500">No screens created yet.</p>
-        )}
+        <div className="bg-white border rounded-lg shadow-sm">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="p-4 font-medium">Status</th>
+                <th className="p-4 font-medium">Screen Name</th>
+                <th className="p-4 font-medium">Location</th>
+                <th className="p-4 font-medium">Group</th>
+                <th className="p-4 font-medium">Last Seen</th>
+                <th className="p-4 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {screens?.map((screen) => {
+                const isOnline = screen.last_seen_at && (new Date().getTime() - new Date(screen.last_seen_at).getTime()) < 10 * 60 * 1000;
+                return (
+                  <tr key={screen.id} className="border-b last:border-none">
+                    <td className="p-4">
+                      <span className={`inline-flex items-center gap-2 px-2 py-1 text-xs rounded-full ${isOnline ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                        <span className={`h-2 w-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                        {isOnline ? 'Online' : 'Offline'}
+                      </span>
+                    </td>
+                    <td className="p-4 font-medium">{screen.name}</td>
+                    <td className="p-4 text-gray-600">
+                      {Array.isArray(screen.sites_table) && screen.sites_table.length > 0
+                        ? screen.sites_table.map((site) => site.name).join(", ")
+                        : 'N/A'}
+                    </td>
+                    <td className="p-4 text-gray-600">
+                      {Array.isArray(screen.screen_groups) && screen.screen_groups.length > 0
+                        ? screen.screen_groups.map((group) => group.name).join(", ")
+                        : 'N/A'}
+                    </td>
+                    <td className="p-4 text-gray-600">{screen.last_seen_at ? new Date(screen.last_seen_at).toLocaleString() : 'Never'}</td>
+                    <td className="p-4 text-right">
+                      <ScreenSettings screen={screen} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {screens?.length === 0 && (
+            <div className="text-center p-8 text-gray-500">
+              <HardDrive className="mx-auto h-12 w-12 text-gray-300" />
+              <h3 className="mt-2 text-sm font-medium">No screens found</h3>
+              <p className="mt-1 text-sm">Get started by adding a new screen.</p>
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );
