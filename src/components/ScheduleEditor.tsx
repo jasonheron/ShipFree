@@ -1,19 +1,29 @@
+// src/components/ScheduleEditor.tsx
 "use client";
 
 import { useState } from "react";
 import { saveSchedule } from "@/app/screens/actions";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, X } from "lucide-react";
 
-// Helper objects for layout properties
+// Defines how many media slots each layout type has.
 const layoutSlotCount: Record<string, number> = {
   "1": 1, "2": 1, "3": 1, "4": 1, "1-1": 2, "2-2": 2, "1-2": 2, "2-1": 2, "1-1-1": 3,
   "2-1-1": 3, "1-2-1": 3, "1-1-2": 3, "1-1-1-1": 4,
 };
 
+// Defines the grid column span for each slot within a layout.
+// Assumes a 4-column grid base.
 const layoutSlotSpans: Record<string, number[]> = {
-  "1-1-1-1": [1, 1, 1, 1], "2-1-1": [2, 1, 1], "1-2-1": [1, 2, 1], "1-1-2": [1, 1, 2],
-  "2-2": [2, 2], "1-1-1": [1, 1, 1], "1-2": [1, 2], "2-1": [2, 1], "1-1": [2, 2], // Correct span for 1-1 layout
   "1": [4], "2": [4], "3": [4], "4": [4],
+  "1-1": [2, 2],
+  "2-2": [2, 2],
+  "1-2": [1, 3],
+  "2-1": [3, 1],
+  "1-1-1": [1, 1, 2], // Spans should add up to 4
+  "2-1-1": [2, 1, 1],
+  "1-2-1": [1, 2, 1],
+  "1-1-2": [1, 1, 2],
+  "1-1-1-1": [1, 1, 1, 1],
 };
 
 // Define component props
@@ -21,7 +31,7 @@ interface ScheduleEditorProps {
   groupId: string;
   layouts: string[];
   media: { id: string; file_name: string }[];
-  initialSchedule: any[]; // Prop to load existing schedule
+  initialSchedule: any[];
 }
 
 export default function ScheduleEditor({
@@ -30,18 +40,16 @@ export default function ScheduleEditor({
   media,
   initialSchedule = [],
 }: ScheduleEditorProps) {
-  // Function to map the schedule data from the DB to the component's state format
   const mapInitialScheduleToState = (schedule: any[]) => {
     return schedule.map(item => ({
       id: crypto.randomUUID(),
       layout: item.layout,
       duration: `${item.duration_seconds}s`,
-      // media_ids from a jsonb column is already an array
-      mediaSelections: item.media_ids || [], 
+      mediaSelections: item.media_ids || Array(layoutSlotCount[item.layout] || 1).fill(null),
     }));
   };
 
-  const [rows, setRows] = useState(mapInitialScheduleToState(initialSchedule));
+  const [rows, setRows] = useState(() => mapInitialScheduleToState(initialSchedule));
 
   function addRow() {
     const initialLayout = layouts[0] || "1";
@@ -54,6 +62,11 @@ export default function ScheduleEditor({
         mediaSelections: Array(layoutSlotCount[initialLayout] || 1).fill(null),
       },
     ]);
+  }
+  
+  function removeRow(index: number) {
+    const newRows = rows.filter((_, i) => i !== index);
+    setRows(newRows);
   }
 
   function updateRow(index: number, updated: Partial<(typeof rows)[0]>) {
@@ -70,11 +83,11 @@ export default function ScheduleEditor({
     setRows(newRows);
   }
 
-  // Prepare the data for the server action
-  const preparedRows = rows.map(row => ({
+  const preparedRows = rows.map((row, index) => ({
     layout: row.layout,
-    duration: parseInt(row.duration) || 10,
+    duration: row.duration,
     media_ids: row.mediaSelections,
+    slot_index: index,
   }));
 
   return (
@@ -83,74 +96,81 @@ export default function ScheduleEditor({
       <input type="hidden" name="slots_json" value={JSON.stringify(preparedRows)} />
 
       {rows.map((row, i) => {
-        // Correctly calculate the number of dropdowns needed for the layout
         const numberOfSlots = layoutSlotCount[row.layout] || 1;
-        const spansForLayout = layoutSlotSpans[row.layout] || [1];
+        const spansForLayout = layoutSlotSpans[row.layout] || [4];
         
         return (
-            <div key={row.id} className="border bg-white rounded-lg p-4 space-y-4 shadow-sm">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <span className="text-gray-600 font-semibold">#{i + 1}</span>
-                <div className="flex items-center gap-2">
-                    <span className="text-gray-600">Layout:</span>
-                    <div className="flex gap-1">
-                    {layouts.map((l) => (
-                        <button
-                        key={l}
-                        type="button"
-                        onClick={() => updateRow(i, { layout: l })}
-                        className={`px-2 py-1 border rounded text-xs ${
-                            row.layout === l
-                            ? "bg-blue-600 text-white border-blue-600"
-                            : "bg-gray-100 hover:bg-gray-200"
-                        }`}
-                        >
-                        {l}
-                        </button>
-                    ))}
-                    </div>
-                </div>
-                <div className="flex items-center gap-2">
-                    <span className="text-gray-600">Duration:</span>
-                    <select
-                    value={row.duration}
-                    onChange={(e) => updateRow(i, { duration: e.target.value })}
-                    className="border rounded px-2 py-1 text-sm bg-gray-50"
-                    >
-                    <option value="5s">5s</option>
-                    <option value="10s">10s</option>
-                    <option value="15s">15s</option>
-                    <option value="30s">30s</option>
-                    </select>
-                </div>
-            </div>
+            <div key={row.id} className="relative border bg-white rounded-lg p-4 space-y-4 shadow-sm">
+              <button 
+                type="button" 
+                onClick={() => removeRow(i)}
+                className="absolute top-2 right-2 text-gray-400 hover:text-red-500"
+                title="Remove row"
+              >
+                <X size={18} />
+              </button>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <span className="text-gray-600 font-semibold">#{i + 1}</span>
+                  <div className="flex items-center gap-2">
+                      <span className="text-gray-600">Layout:</span>
+                      <div className="flex gap-1 flex-wrap">
+                      {layouts.map((l) => (
+                          <button
+                          key={l}
+                          type="button"
+                          onClick={() => updateRow(i, { layout: l })}
+                          className={`px-2 py-1 border rounded text-xs transition-colors ${
+                              row.layout === l
+                              ? "bg-blue-600 text-white border-blue-600"
+                              : "bg-gray-100 hover:bg-gray-200"
+                          }`}
+                          >
+                          {l}
+                          </button>
+                      ))}
+                      </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                      <span className="text-gray-600">Duration:</span>
+                      <select
+                      value={row.duration}
+                      onChange={(e) => updateRow(i, { duration: e.target.value })}
+                      className="border rounded px-2 py-1 text-sm bg-gray-50 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                      <option value="5s">5s</option>
+                      <option value="10s">10s</option>
+                      <option value="15s">15s</option>
+                      <option value="30s">30s</option>
+                      <option value="60s">60s</option>
+                      </select>
+                  </div>
+              </div>
 
-            <div className="grid grid-cols-4 gap-2 w-full">
-                {/* Loop based on the number of slots, not the spans array */}
-                {Array.from({ length: numberOfSlots }).map((_, idx) => {
-                    const span = spansForLayout[idx] || 1;
-                    return (
-                        <select
-                            key={idx}
-                            value={row.mediaSelections[idx] ?? ""}
-                            onChange={(e) => {
-                            const updatedSelections = [...row.mediaSelections];
-                            updatedSelections[idx] = e.target.value || null;
-                            updateRow(i, { mediaSelections: updatedSelections });
-                            }}
-                            className="border rounded px-3 py-2 bg-gray-50 text-sm"
-                            style={{ gridColumn: `span ${span}` }}
-                        >
-                            <option value="">— Select Media —</option>
-                            {media.map((m) => (
-                            <option key={m.id} value={m.id}>
-                                {m.file_name}
-                            </option>
-                            ))}
-                        </select>
-                    )
-                })}
-            </div>
+              <div className="grid grid-cols-4 gap-2 w-full">
+                  {Array.from({ length: numberOfSlots }).map((_, idx) => {
+                      const span = spansForLayout[idx] || 1;
+                      return (
+                          <select
+                              key={idx}
+                              value={row.mediaSelections[idx] ?? ""}
+                              onChange={(e) => {
+                                const updatedSelections = [...row.mediaSelections];
+                                updatedSelections[idx] = e.target.value || null;
+                                updateRow(i, { mediaSelections: updatedSelections });
+                              }}
+                              className="border rounded px-3 py-2 bg-gray-50 text-sm focus:ring-blue-500 focus:border-blue-500"
+                              style={{ gridColumn: `span ${span}` }}
+                          >
+                              <option value="">— Select Media —</option>
+                              {media.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                  {m.file_name}
+                              </option>
+                              ))}
+                          </select>
+                      )
+                  })}
+              </div>
             </div>
         );
       })}
@@ -159,14 +179,14 @@ export default function ScheduleEditor({
         <button
           type="button"
           onClick={addRow}
-          className="inline-flex items-center px-4 py-2 bg-white border rounded text-black hover:bg-gray-100"
+          className="inline-flex items-center px-4 py-2 bg-white border rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         >
           <PlusCircle className="w-4 h-4 mr-2" />
           Add to Queue
         </button>
         <button
           type="submit"
-          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
         >
           Save Schedule
         </button>
