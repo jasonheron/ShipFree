@@ -1,128 +1,100 @@
-# ⚡ ShipFree
+# SmartScreens - Digital Signage Platform
 
-Hi there! 👋
+![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white)
+![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
 
-ShipFree is a free alternative to ShipFast, designed to simplify and optimize your shipping process. It’s built using modern web technologies like Next.js, Supabase, Stripe, LemonSqueezy, Drizzle ORM and Mailgun.
+A modern, web-based digital signage solution built with Next.js and Supabase. This platform allows for centralized management of media schedules and playback across multiple screens, with support for complex, synchronized, and extended display layouts.
 
-## Features
+## Key Features
 
-- SEO Optimisation
-- User authentication with Supabase
-- Stripe and LemonSqueezy integration
-- Email notifications via Mailgun
-- Modern UI built with Next.js and TailwindCSS
+-   **Multi-Screen Synchronization:** Group multiple physical screens together and control their content from a single dashboard.
+-   **Advanced Layout Engine:**
+    -   **Sync Mode:** Display different content on different screens within a group (e.g., layouts like `1-1-1` or `2-1`).
+    -   **Spanned Layouts:** Treat multiple synchronized screens as a single canvas, spanning one piece of media across them (e.g., a layout of `3` on three screens).
+    -   **Extend Mode:** Treat multiple monitors connected to a single player device as one continuous, ultra-widescreen display.
+-   **Centralized Management:** A user-friendly dashboard to upload media, create screen groups, and build complex, time-based schedules.
+-   **Custom Screen Ordering:** Drag-and-drop interface to define the physical order of screens within a group, ensuring layouts are rendered correctly.
+-   **Offline-First Player:** The player application aggressively caches schedules and media files using IndexedDB, allowing for uninterrupted playback even if the network connection is lost.
+-   **Real-time Updates:** Utilizes Supabase Realtime to push schedule updates to players instantly, with a leader-election mechanism to ensure smooth, synchronized transitions.
 
-## Docker Setup
+## Tech Stack
 
-ShipFree provides Docker configurations for both **development** and **production** environments. Below, you'll find the structure of the Docker files and the commands to get started.
+-   **Framework:** [Next.js](https://nextjs.org/) (App Router)
+-   **Backend & Database:** [Supabase](https://supabase.com/)
+    -   **Auth:** Manages user accounts.
+    -   **PostgreSQL:** Main database for storing user data, screens, groups, and schedules.
+    -   **Storage:** Hosts all uploaded media files (images, videos).
+    -   **Realtime:** Powers the live synchronization between players in a `sync` group.
+-   **Styling:** [Tailwind CSS](https://tailwindcss.com/)
+-   **Deployment:** [Vercel](https://vercel.com/)
 
-### Docker File Structure
+## System Architecture
 
-The Docker files are organized as follows:
+The project consists of two main parts: the management dashboard and the player application.
 
-```
-docker
-├── dev
-│   ├── Dockerfile                  # Dockerfile for development
-│   ├── docker-compose.yml          # Base development setup
-│   ├── docker-compose.mongodb.yml  # Development setup with MongoDB
-│   └── docker-compose.postgres.yml # Development setup with PostgreSQL
-└── prod
-    ├── Dockerfile                  # Dockerfile for production
-    ├── docker-compose.yml          # Base production setup
-    ├── docker-compose.mongodb.yml  # Production setup with MongoDB
-    └── docker-compose.postgres.yml # Production setup with PostgreSQL
-```
+### 1. Management Dashboard
 
-### Development Environment
+A standard Next.js web application where authenticated users can:
+-   Manage their sites, screens, and license keys.
+-   Group screens together and define their `sync_mode` (`sync` or `extend`).
+-   Define the physical order of screens within a group.
+-   Upload media files to Supabase Storage.
+-   Create and edit schedules for each screen group using a visual editor.
 
-In development, the project runs in **watch mode**, meaning it automatically detects changes in your code and rebuilds the application. This is ideal for local development but should **never** be used in production.
+### 2. Player Application (`/play/[screenId]`)
 
-#### Commands for Development
+This is the core client-side application that runs on the physical digital signage players (e.g., a Raspberry Pi or a mini PC connected to a screen).
 
-1. **Base Setup** (without a database):
+-   **Pairing:** Each player is paired to an account using a unique, one-time pairing code.
+-   **Caching:** On startup, the player fetches its configuration and schedule. All media files and the schedule itself are stored locally in the browser's IndexedDB. This ensures that if the player reboots or loses internet, it can immediately start playing from its cache without contacting the server.
+-   **Update Mechanism:** The player periodically checks a `last_updated` timestamp on its assigned screen group. If the server's timestamp is newer than the one it has cached, it triggers a full download of the new schedule and media, then reloads itself to apply the changes.
+-   **Synchronization (`sync` mode):** Players in a `sync` group use Supabase's Realtime channels to communicate. One player is elected as the "leader" and is responsible for broadcasting "slide change" events to all other players in the group, ensuring they transition to the next item in the schedule at the exact same time.
 
-   ```bash
-   docker-compose -f docker/dev/docker-compose.yml up --build
-   ```
+## Getting Started
 
-2. **With PostgreSQL**:
+### Prerequisites
 
-   ```bash
-   docker-compose -f docker/dev/docker-compose.yml -f docker/dev/docker-compose.postgres.yml up --build
-   ```
+-   Node.js and npm (or yarn)
+-   A Supabase account
 
-3. **With MongoDB**:
-   ```bash
-   docker-compose -f docker/dev/docker-compose.yml -f docker/dev/docker-compose.mongodb.yml up --build
-   ```
+### Setup
 
-#### Why Watch Mode?
+1.  **Clone the repository:**
+    ```bash
+    git clone <your-repo-url>
+    cd <your-repo-name>
+    ```
 
-- **Watch mode** ensures that your changes are reflected in real-time without manually restarting the server.
-- It’s perfect for development but **not suitable for production** due to performance and security concerns.
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
 
----
+3.  **Set up Supabase:**
+    -   Create a new project on Supabase.
+    -   Use the SQL Editor to set up your tables (`screens_table`, `screen_groups`, `media_schedules`, etc.) and the required PostgreSQL functions (`get_group_for_screen`, `create_screen_with_license`).
+    -   Find your Project URL and `anon` key in **Project Settings > API**.
 
-### Production Environment
+4.  **Configure Environment Variables:**
+    -   Create a `.env.local` file in the root of your project.
+    -   Add your Supabase credentials:
+        ```
+        NEXT_PUBLIC_SUPABASE_URL=YOUR_SUPABASE_URL
+        NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+        ```
 
-The production environment is optimized for performance and security. It uses a multi-stage build to reduce the image size and includes only the necessary dependencies.
+5.  **Run the development server:**
+    ```bash
+    npm run dev
+    ```
 
-#### Commands for Production
+    The application will be available at `http://localhost:3000`.
 
-1. **Base Setup** (without a database):
+## Future Improvements
 
-   ```bash
-   docker-compose -f docker/prod/docker-compose.yml up --build -d
-   ```
-
-2. **With PostgreSQL**:
-
-   ```bash
-   docker-compose -f docker/prod/docker-compose.yml -f docker/prod/docker-compose.postgres.yml up --build -d
-   ```
-
-3. **With MongoDB**:
-   ```bash
-   docker-compose -f docker/prod/docker-compose.yml -f docker/prod/docker-compose.mongodb.yml up --build -d
-   ```
-
-#### Key Differences in Production
-
-- **No watch mode**: The application is pre-built, and changes require a rebuild.
-- **Optimized images**: Smaller image size and faster startup times.
-- **Environment variables**: Ensure all required variables (e.g., `DATABASE_URL`, `API_KEY`) are set.
-
----
-
-### Portainer Integration
-
-Portainer is included in both development and production setups to help you manage your Docker containers via a web interface.
-
-- **Access Portainer**: `http://localhost:9000`
-- **Default credentials**: Set up during the first login.
-
----
-
-### Disclaimer
-
-- **Development Mode**: Uses watch mode for real-time updates. Not suitable for production.
-- **Production Mode**: Optimized for performance and security. Requires a rebuild for changes.
-
----
-
-## Docs
-
-For full documentation, visit: [ShipFree Docs](https://shipfree.idee8.agency/docs)
-
-## Code of Conduct
-
-Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
-
-## Contributing
-
-For people who want to contribute, please refer to [CONTRIBUTING.md](CONTRIBUTING.md).
-
----
-
-Cooked for you with ❤️ by [Idee8](https://idee8.agency)
+-   **Advanced User Roles:** Implement permissions for different users within an organization.
+-   **Player Health Monitoring:** Add more detailed status reporting from players to the dashboard (e.g., online/offline status, current content, errors).
+-   **Transition Effects:** Add configurable visual transitions between schedule items.
+-   **More Layout Options:** Expand the layout engine to support more complex grid configurations.
